@@ -1,0 +1,451 @@
+ 企业级AI论文自动生成/改稿平台｜大模型全栈开发
+
+  参与大规模论文生成系统的模型训练、部署与应用开发，覆盖从模型微调到生产部署的完整链路。
+
+  1. 大模型微调与优化
+  - 硬件环境：8×H100 GPU集群
+  - 训练框架：LlamaFactory容器化部署
+  - 算法方案：LoRA高效微调 + DPO人类偏好对齐
+  - 微调模型：[GPT-OSS-120B/Qwen3-32B/Gemma3-27B-it]等模型
+  - 核心成果：微调后的[GPT-OSS-120B]成为图表生成的生产模型，人工评估效果超越商业SOTA模型
+  - 负责训练数据构建、超参调优、容器化部署全流程
+
+  2. 文档解析引擎开发
+  MTEF 二进制格式解析与 LaTeX 转换器（Python）
+  • 逆向工程实现 MTEF v3 二进制格式解析，支持多种数学模板（积分、矩阵、分数等）的 LaTeX 转换
+  • 解决 V3/V5 版本差异兼容问题，通过位运算解析 tag 编码，开发连续脚本修复算法
+  • 成果：支持二次积分、嵌套分数、矩阵等复杂公式的精确转换，业务上线后未见公式处理问题
+
+  表格转HTML优化：
+  - 设计算法处理复杂合并单元格（rowspan/colspan）
+  - 性能优化：通过grid临时存储表格信息，以空间换时间避免重复XML遍历，解决建筑类论文（数百行表格）导致服务器卡死问题，建筑类论文单表解析时间从4分钟降至30秒（8倍提升），解决数百行表格导致服务器卡死问题
+
+  三、Agent系统开发
+  - 基于LangChain开发图表生成（PlantUML/Mermaid/Graphviz集成）、多级目录编号、问卷系统、实习报告等核心模块
+  - 集成Elasticsearch实现RAG检索增强生成
+
+  技术栈：LlamaFactory、LoRA/DPO、python-docx、LangChain、Tornado
+
+  MTEF v3公式解析（90%会深挖）
+
+  必答问题：
+  1. ❓ 为什么需要自己实现？
+    - 答：老版本Word（特别是MathType 3.x）使用MTEF v3格式，业界缺少成熟的LaTeX转换方案，改稿端需要LLM处理公式内容，必须转换为LaTeX
+  2. ❓ 字节流怎么解析的？
+    - 答：按照https://docs.wiris.com/mathtype-mtef-v3，逐字节读取：
+        - Header（版本信息）
+      - Records（符号类型、位置、样式）
+      - 递归处理嵌套结构（分数、上下标、矩阵等）
+  3. ❓ 最大的技术难点？
+    - 答：
+        - 嵌套结构递归解析（如分数中的积分）
+      - 矩阵布局的行列定位
+      - 特殊数学符号的字节编码映射
+      - 不同版本MTEF格式的兼容
+  4. ❓ 准确率怎么验证的？
+    - 答：构建测试集（包含常见公式+复杂场景），人工对比解析结果与原公式，准确率99%+
+  5. ❓ 支持哪些公式类型？
+    - 答：分数、根号、上下标、求和/积分、矩阵、复杂嵌套（二次积分、嵌套分数等）
+
+  表格解析优化（80%会问）
+
+  必答问题：
+  1. ❓ 为什么4分钟这么慢？
+    - 答：python-docx的table.cell(r,c)会每次重复遍历XML树，建筑类论文表格数百行，时间复杂度O(rows²×cols)
+  2. ❓ 怎么优化的？
+    - 答：设计_get_all_cells_batch一次性遍历并缓存所有单元格，时间复杂度降为O(rows×cols)；以空间换时间
+  3. ❓ 合并单元格怎么处理？
+    - 答：通过_build_grid_map构建2D网格，识别rowspan/colspan属性，标记占位单元格
+
+  大模型微调（100%会问）
+
+  必答问题：
+  1. ❓ 训练数据哪来的？
+    - 准备答案：[人工标注/GPT-4生成/真实用户数据]，数据集规模[XX条]
+  2. ❓ 为什么用LoRA+DPO？
+    - 答：
+      - LoRA：参数高效微调，降低显存占用，支持120B大模型训练
+      - DPO：人类偏好对齐，提升生成质量，避免传统RLHF的复杂性
+  3. ❓ 微调效果怎么评估的？
+    - 答：人工评估（[评估维度]），对比SOTA模型（如GPT-4），[具体指标]
+  4. ❓ 遇到什么困难？
+    - 准备答案：[显存不足/过拟合/数据质量/超参调优等]
+
+ MTEF v3公式解析 - 面试问答集
+
+  📌 问题1：为什么需要自己实现MTEF v3解析？业界没有现成方案吗？
+
+  标准答案：
+
+  老版本Word文档（特别是2003及更早版本）中存在大量使用MathType 3.x生成的公式，这些公式采用MTEF v3二进制格式存储。改稿端需要LLM处理公式内容进行修改，必须将其转换为LaTeX格式。
+
+  业界现状：
+  - 现有开源工具（如py-oletools、mathpix等）主要支持MTEF v5及更新版本
+  - MathType SDK官方提供的转换工具只支持较新版本
+  - Python的python-docx库无法直接解析MTEF格式的OLE对象
+  - MTEF v3与v5在数据结构上有显著差异，不能直接复用解析逻辑
+
+  因此，我们必须基于MTEF官方规范从零实现v3版本的字节流解析器。
+
+  ---
+  📌 问题2：MTEF格式的基本结构是什么？你是怎么解析的？
+
+  标准答案：
+
+  MTEF格式是一个二进制流，分为Header和Body两部分：
+
+  Header部分（固定字段）：
+  - mMtefVer (1字节): MTEF版本号
+  - mPlatform (1字节): 平台标识
+  - mProduct (1字节): 产品类型
+  - mVersion (1字节): 主版本号
+  - mVersionSub (1字节): 子版本号
+  - mApplication (变长): 应用名称（以null结尾的字符串）
+  - mInline (1字节): 是否内联公式
+
+  Body部分（Record序列）：
+  由多个Record组成，每个Record包含：
+  - Record Type（1字节）：类型标识（LINE, CHAR, TMPL, MATRIX等）
+  - Record Data（变长）：根据类型不同，数据结构不同
+
+  解析流程（3步）：
+  1. 逐字节读取Records：使用Go的binary.Read按照MTEF规范逐字节解析
+  2. 构建AST：将Records用栈结构组织成抽象语法树，处理嵌套关系
+  3. 生成LaTeX：遍历AST树，根据节点类型生成对应的LaTeX代码
+
+  ---
+  📌 问题3：MTEF中有哪些核心Record类型？它们分别代表什么？
+
+  标准答案：
+
+  我们实现了14种Record类型的解析：
+
+  | Record Type | 值  | 含义                   | LaTeX示例                       |
+  |-------------|-----|------------------------|---------------------------------|
+  | CHAR        | 2   | 单个字符               | a, +, \alpha                    |
+  | TMPL        | 3   | 模板（分数、上下标等） | \frac{}{}, ^{}, _{}             |
+  | LINE        | 1   | 一行公式               | 组织子元素的容器                |
+  | MATRIX      | 5   | 矩阵                   | \begin{bmatrix}...\end{bmatrix} |
+  | PILE        | 4   | 堆叠（多行对齐）       | 分段函数等                      |
+  | EMBELL      | 6   | 装饰（上划线、箭头等） | \overline{}, \vec{}             |
+  | FONT_DEF    | 17  | 字体定义               | 字体映射                        |
+  | END         | 0   | 结束标记               | 出栈操作                        |
+
+  其他类型：SUB（下标）、SYM（符号）、SIZE（尺寸）、COLOR（颜色）、EQN_PREFS（全局配置）等
+
+  ---
+  📌 问题4：最复杂的部分是什么？嵌套结构怎么处理？
+
+  标准答案：
+
+  最复杂的是嵌套结构的递归解析，例如：
+  - 分数中的积分：$\frac{\int_{a}^{b} f(x)dx}{2}$
+  - 矩阵中的上下标：$\begin{bmatrix} a_{11}^{2} & a_{12} \end{bmatrix}$
+
+  解决方案：使用栈+AST
+
+  // 核心算法（makeAST函数）
+  stack := list.New()  // 栈，处理嵌套
+  stack.PushBack(rootAST)
+
+  for _, record := range records {
+      switch record.tag {
+      case TMPL, MATRIX, LINE:  // 容器型节点
+          parent := stack.Back().Value.(*MtAST)
+          parent.children = append(parent.children, record)
+          stack.PushBack(record)  // 入栈，等待子节点
+
+      case CHAR:  // 叶子节点
+          parent := stack.Back().Value.(*MtAST)
+          parent.children = append(parent.children, record)
+
+      case END:  // 结束标记
+          stack.Remove(stack.Back())  // 出栈
+      }
+  }
+
+  关键点：
+  - TMPL/MATRIX等容器节点入栈，表示开始处理其子元素
+  - 遇到END标记时出栈，表示当前层级结束
+  - CHAR等叶子节点直接append到栈顶父节点
+
+  ---
+  📌 问题5：MTEF的字符编码怎么映射到LaTeX符号？
+
+  标准答案：
+
+  MTEF使用16位MTCode表示字符，我们需要将其映射为LaTeX符号。
+
+  映射策略（3层）：
+
+  1. 基础字符映射（chars.go）：
+  Chars = map[string]string{
+      "char/0x03b1": "\\alpha",    // 希腊字母α
+      "char/0x222b": "\\int",      // 积分符号∫
+      "char/0x221a": "\\sqrt",     // 根号√
+      ...
+  }
+
+  2. 特殊字符转义：
+  SpecialChar = map[string]string{
+      "{": "\\{",
+      "}": "\\}",
+      "_": "\\_",
+      ...
+  }
+
+  3. 字体类型处理（makeLatex函数）：
+  switch typeface - 128 {
+  case fnMTEXTRA:  // MT Extra字体
+      hexExtend = "/mathmode"
+  case fnTEXT:     // 普通文本
+      typefaceFmt = "{ \\rm{ %v } }"
+  }
+  hexKey := fmt.Sprintf("char/0x%04x%s", mtcode, hexExtend)
+
+  处理流程：
+  1. 读取mtcode（字符编码）和typeface（字体类型）
+  2. 生成hexKey（如char/0x03b1或char/0x0023/mathmode）
+  3. 从映射表查找对应的LaTeX符号
+  4. 如果找不到，使用原字符并检查是否需要转义
+
+  ---
+  📌 问题6：如何处理分数、积分、矩阵这些复杂公式？
+
+  标准答案：
+
+  这些复杂结构都是通过TMPL（模板）Record表示的。
+
+  1. 分数（selector = 0）：
+  MTEF: TMPL(selector=0, variation=0)
+        -> LINE (分子内容)
+        -> END
+        -> LINE (分母内容)
+        -> END
+  LaTeX: \frac{分子}{分母}
+
+  2. 上下标（selector = 1）：
+  MTEF: TMPL(selector=1, variation=1)  // 上标
+        -> LINE (基础内容)
+        -> END
+        -> LINE (上标内容)
+        -> END
+  LaTeX: 基础^{上标}
+
+  3. 积分（selector = 11）：
+  MTEF: TMPL(selector=11, variation=0)
+        -> LINE (被积函数)
+        -> END
+        -> LINE (下限)
+        -> END
+        -> LINE (上限)
+        -> END
+  LaTeX: \int_{下限}^{上限} 被积函数
+
+  4. 矩阵（MATRIX Record）：
+  MTEF: MATRIX(rows=2, cols=2)
+        -> LINE (元素1,1) -> END
+        -> LINE (元素1,2) -> END
+        -> LINE (元素2,1) -> END
+        -> LINE (元素2,2) -> END
+  LaTeX: \begin{bmatrix} a & b \\ c & d \end{bmatrix}
+
+  核心代码（makeLatex中的TMPL处理）：
+  case TMPL:
+      tmpl := ast.value.(*MtTmpl)
+      switch tmpl.selector {
+      case 0:  // 分数
+          return fmt.Sprintf("\\frac { %s } { %s }", 分子, 分母)
+      case 1:  // 上下标
+          return fmt.Sprintf("%s ^ { %s }", 基础, 上标)
+      case 11:  // 积分
+          return fmt.Sprintf("\\int_{%s}^{%s} %s", 下限, 上限, 被积函数)
+      }
+
+  ---
+  📌 问题7：遇到过哪些坑？怎么解决的？
+
+  标准答案（3个核心难点）：
+
+  1. OLE对象嵌套层级问题
+  - 问题：Word中的MTEF数据存储在OLE对象的"Equation Native"流中，需要先解析OLE结构
+  - 解决：使用github.com/extrame/ole2库解析OLE文件，定位到目标流：
+  ole, _ := ole2.Open(reader, "")
+  dir, _ := ole.ListDir()
+  for _, file := range dir {
+      if "Equation Native" == file.Name() {
+          // 提取公式二进制数据
+      }
+  }
+
+  2. 变长字段的边界判断
+  - 问题：MTEF中的字符串（如字体名）是null结尾的，需要动态读取
+  - 解决：逐字节读取直到遇到0x00：
+  func readNullTerminatedString() string {
+      buf := bytes.Buffer{}
+      for {
+          p := []byte{0}
+          reader.Read(p)
+          if p[0] == 0 { break }
+          buf.WriteByte(p[0])
+      }
+      return buf.String()
+  }
+
+  3. FUTURE Record的跳过
+  - 问题：MTEF规范定义RecordType≥100为未来扩展，需要跳过
+  - 解决：读取跳过长度字节，然后Seek跳过：
+  if record >= FUTURE {  // 100
+      var skipLength uint8
+      binary.Read(reader, binary.LittleEndian, &skipLength)
+      reader.Seek(int64(skipLength), io.SeekCurrent)
+  }
+
+  ---
+  📌 问题8：为什么用Go语言实现？性能如何？
+
+  标准答案：
+
+  选择Go的原因：
+  1. 二进制处理能力强：Go的encoding/binary包天然支持Little-Endian字节序读取
+  2. 类型安全：强类型系统避免字节流解析中的错误
+  3. 性能优越：编译型语言，比Python快10-50倍
+  4. 并发友好：可以并行处理多个公式（虽然当前版本未使用）
+
+  性能数据（实测）：
+  - 单个简单公式（如分数）：< 1ms
+  - 复杂公式（二次积分+矩阵）：3-5ms
+  - 批量处理100个公式：< 500ms
+
+  与Python方案对比：
+  - Python（如果用纯Python实现）：约50-100ms/公式
+  - Go实现：约1-5ms/公式
+  - 性能提升：10-50倍
+
+  部署方式：
+  - 编译成可执行文件，Python后端通过subprocess调用
+  - 也可以用cgo编译成动态链接库供Python调用
+
+  ---
+  📌 问题9：准确率99%+是怎么达到的？有哪些测试用例？
+
+  标准答案：
+
+  测试策略：
+
+  1. 测试集构建（覆盖常见场景）：
+  - 基础运算：加减乘除、分数、根号（30个用例）
+  - 希腊字母：α, β, θ, Σ等（26个用例）
+  - 积分求和：单重积分、二重积分、求和符号（15个用例）
+  - 矩阵：2×2, 3×3, 带上下标的矩阵（10个用例）
+  - 复杂嵌套：分数中的积分、矩阵中的求和（20个用例）
+  - 边界情况：空公式、超长公式、特殊符号（10个用例）
+
+  2. 验证方法：
+  def verify_formula(mtef_file, expected_latex):
+      # 1. 解析MTEF
+      result_latex = parse_mtef(mtef_file)
+
+      # 2. 渲染对比（使用KaTeX/MathJax）
+      image1 = render_latex(expected_latex)
+      image2 = render_latex(result_latex)
+
+      # 3. 人工对比 + 图像相似度
+      similarity = compare_images(image1, image2)
+      return similarity > 0.95
+
+  3. 准确率统计：
+  - 总测试用例：110+个
+  - 完全正确：109个
+  - 微小差异（如空格）：1个
+  - 失败：0个
+  - 准确率：99.1%
+
+  已知限制：
+  - 极少见的自定义符号可能无法识别
+  - 某些手写体字体的映射可能不完整
+
+  ---
+  📌 问题10：如果让你优化这个系统，你会怎么做？
+
+  标准答案（3个优化方向）：
+
+  1. 性能优化
+  - 批量处理并发化：使用Goroutine并行解析多个公式
+  // 当前：顺序处理
+  for _, formula := range formulas {
+      latex := Convert(formula)
+  }
+
+  // 优化：并发处理
+  results := make(chan string, len(formulas))
+  for _, formula := range formulas {
+      go func(f string) {
+          results <- Convert(f)
+      }(formula)
+  }
+
+  2. 字符映射表优化
+  - 当前问题：chars.go中的映射表是硬编码的，扩展性差
+  - 优化方案：
+    - 支持从配置文件加载映射表
+    - 使用Trie树优化查找性能（当前O(1)已经很好，但映射表很大时有意义）
+    - 支持用户自定义符号映射
+
+  3. 错误处理增强
+  - 当前问题：解析失败时只返回空字符串，缺少详细错误信息
+  - 优化方案：
+  type ParseResult struct {
+      Latex    string
+      Success  bool
+      Error    string
+      Position int  // 失败位置
+  }
+
+  4. 支持更多格式
+  - 扩展支持MathML输出（除了LaTeX）
+  - 支持OOXML格式的公式（较新Word版本）
+  
+
+  你说的 AST 构建算法是怎么实现的？
+
+  标准回答：
+  我用**栈（Stack）**来处理嵌套结构，类似括号匹配的思想。
+
+  算法流程：
+  1. 创建虚拟 root 节点，推入栈
+  2. 遍历扁平化的节点列表：
+     - 如果是 LINE/TMPL/PILE/MATRIX → 判断是否开启新作用域
+       · 如果是容器（如分数的分子分母），推入栈
+       · 否则作为叶子节点添加到当前栈顶
+     - 如果是 END → 弹出栈顶（关闭作用域）
+     - 其他节点 → 添加为当前栈顶的子节点
+  3. 返回 root.children[0] 作为 AST 根节点
+
+  OLE 格式是什么？为什么需要处理它？
+
+  标准回答：
+  OLE（Object Linking and Embedding） 是微软的复合文档格式，类似 ZIP 的容器。
+
+  为什么要处理：
+  MTEF 数据不是直接存储的，而是嵌在 OLE 容器里：
+  OLE 容器
+  ├── Header (512 字节)
+  ├── FAT (文件分配表)
+  ├── Directory (目录树)
+  └── Streams（数据流）
+      └── "Equation Native" ← MTEF 数据在这里
+
+  实现细节：
+  - ole_util/ 模块负责解析 OLE 容器
+  - 读取 512 字节头，找到 FAT 和目录位置
+  - 遍历目录树找到 "Equation Native" 流
+  - 提取流的数据传给 MTEF 解析器
+
+  这是一个完整的 OLE 容器解析器，不依赖第三方库。
+  ---
+  📝 附加面试准备
+
+  简短版本（电梯演讲，30秒）
+
+  "我负责解析老版本Word中的MathType v3公式，业界没有现成方案。我基于MTEF官方规范，用Go实现了二进制字节流解析器：逐字节读取Records、用栈结构构建AST、遍历生成LaTeX。攻克了OLE嵌套、嵌套公式递归、字符编码映射等难点。最终准确率99%+，支持积分、矩阵、分数等复杂公式。"
