@@ -22,3 +22,5 @@ latex_str = mtef.Translate()
 ## 参考项目
 
 [mtef-go](https://github.com/zhexiao/mtef-go)
+
+[mtef-py](https://github.com/AndyQsmart/MTEF-py)
